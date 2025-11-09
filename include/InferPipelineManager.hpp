@@ -12,16 +12,15 @@
 class InferPipelineManager {
 public:
     explicit InferPipelineManager(
-        const std::string& config_file_path = "/home/tom/carbot_inference/config_preprocess.txt",
-        const std::string& model_path = "/home/tom/models/carbot_v1/modelv1.engine"
+        const std::string& config_file_path = "/home/tom/carbot_inference/config/config_preprocess.txt",
+        const std::string& model_path = "/home/tom/models/carbot_v1/modelv2.engine"
     );
-    ~InferPipelineManager();
     bool setup();
-    bool start_pipeline_async();
-    void stop_pipeline();
+    bool startPipelineAsync();
+    void stopPipeline();
 
     // blocking call, until new result is available.
-    void getLatestResult(std::vector<float>& output_data);
+    bool getLatestResult(std::vector<float>& output_data);
 private:
     const int WIDTH = 1920;
     const int HEIGHT = 1080;
@@ -38,8 +37,9 @@ private:
     std::unique_ptr<ResultData> result_data_;
 
     bool cuda_manager_running_{true};
+    bool receive_running_{true};
     std::thread gst_pipeline_thread_;
     std::thread cuda_infer_thread_;
 
-    bool start_pipeline();
+    void startPipeline();
 };

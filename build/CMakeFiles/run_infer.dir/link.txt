@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/run_infer.dir/src/main.cpp.o -o run_infer  -Wl,-rpath,/home/tom/carbot_inference/build:/usr/local/cuda/lib64 libcarbot_inference.so /usr/local/cuda/lib64/libcudart.so 
