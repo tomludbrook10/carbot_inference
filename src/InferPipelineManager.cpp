@@ -1,11 +1,10 @@
-#include "Coms.hpp"
+#include "ProcessData.hpp"
 #include "InferPipelineManager.hpp"
 
 #include <gst/gst.h>
 #include <gst/app/gstappsink.h>
 #include <iostream>
 #include <string>
-#include <chrono>
 
 static GstFlowReturn on_new_sample(GstElement *appsink, gpointer udata) {
     GstSample *sample;
@@ -40,8 +39,8 @@ static GstFlowReturn on_new_sample(GstElement *appsink, gpointer udata) {
     return GST_FLOW_OK;
 }
 
-InferPipelineManager::InferPipelineManager(const std::string& config_file_path, const std::string& model_path)
-    : pipeline_(nullptr), config_file_path_(config_file_path), model_path_(model_path) {}
+InferPipelineManager::InferPipelineManager(const std::string& config_file_path)
+    : pipeline_(nullptr), config_file_path_(config_file_path) {}
 
 bool InferPipelineManager::setup() {
     GstElement *source, *network_preprocessor, *sink;
@@ -79,8 +78,7 @@ bool InferPipelineManager::setup() {
     g_object_set(G_OBJECT(streammux), "width", WIDTH, "height", HEIGHT, "batch-size", 1, nullptr);
 
     gst_bin_add_many(GST_BIN(pipeline_), source, camera_capsfilter, streammux, network_preprocessor, sink, nullptr);
-    gst_element_link_many(source, camera_capsfilter, nullptr);
-    
+
 
     // https://docs.nvidia.com/metropolis/deepstream/dev-guide/text/DS_plugin_gst-nvstreammux.html
     // we have to link the pads manually for streammux, by requesting a new pad from the muxer.
@@ -107,7 +105,7 @@ bool InferPipelineManager::setup() {
     std::cout << "GST Infer pipeline setup completed." << std::endl;
 
     cuda_manager_ = std::make_unique<CudaManager>();
-    if (!cuda_manager_->setup(model_path_, OUTPUT_SIZE, SIZE_OF_DATA_IN_BYTES)) {
+    if (!cuda_manager_->setup(model_path_)) {
         std::cerr << "Failed to set up CudaManager." << std::endl;
         gst_object_unref(pipeline_);
         return false;
@@ -115,32 +113,27 @@ bool InferPipelineManager::setup() {
 
     result_data_ =  std::make_unique<ResultData>();
     result_data_->output_data.reserve(OUTPUT_SIZE);
-
-    std::cout << "Waiting 5 seconds for camera to warm up..." << std::endl;
-    std::this_thread::sleep_for(std::chrono::seconds(5));
     return true;
 }
 
-bool InferPipelineManager::startPipelineAsync() {
+void InferPipelineManager::start_pipeline_async() {
     if (!pipeline_) {
         std::cerr << "Pipeline is not set up. Call setup() before starting the pipeline." << std::endl;
-        return false;
+        return;
     }
 
 
-    gst_pipeline_thread_ = std::thread(&InferPipelineManager::startPipeline, this);
+    gst_pipeline_thread_ = std::thread(&InferPipelineManager::start_pipeline, this);
     cuda_infer_thread_ = std::thread(&CudaManager::infer, 
                                     cuda_manager_.get(), 
                                     process_data_.get(), 
                                     result_data_.get(), 
                                     INPUT_SIZE, 
                                     OUTPUT_SIZE, 
-                                    SIZE_OF_DATA_IN_BYTES,
-                                    &cuda_manager_running_);
-    return true;
+                                    SIZE_OF_DATA_IN_BYTES);
 }
 
-void InferPipelineManager::stopPipeline() { 
+void InferPipelineManager::stop_pipeline() { 
     // first stop the gst pipeline.
     gst_element_send_event(pipeline_, gst_event_new_eos());
     if (gst_pipeline_thread_.joinable()) {
@@ -149,26 +142,16 @@ void InferPipelineManager::stopPipeline() {
         pipeline_ = nullptr;
     }
 
-    {
-        std::lock_guard<std::mutex> lock(process_data_->mtx);
-        cuda_manager_running_ = false;
-    }
-    process_data_->cv.notify_one();
+    cuda_manager_running_ = false;
     if (cuda_infer_thread_.joinable()) {
         cuda_infer_thread_.join();
     }
-
-    {
-        std::lock_guard<std::mutex> lock(result_data_->mtx);
-        receive_running_ = false;
-    }
-    result_data_->cv.notify_one();
 
     std::cout << "Inference pipeline stopped." << std::endl;
 }
 
 
-void InferPipelineManager::startPipeline() {
+void InferPipelineManager::start_pipeline() {
     GstBus *bus;
     GstMessage *msg;
 
@@ -209,17 +192,16 @@ void InferPipelineManager::startPipeline() {
     std::cout << "GST Infer pipeline stopped." << std::endl;
 }
 
-bool InferPipelineManager::getLatestResult(std::vector<float>& output_data) {
+void InferPipelineManager::getLatestResult(std::vector<float>& output_data) {
     std::unique_lock<std::mutex> lock(result_data_->mtx);
-    result_data_->cv.wait(lock, [this]() { return !result_data_->output_data.empty() || !receive_running_; });
-    if (!receive_running_) {
+    result_data_->cv.wait(lock, [this]() { return !result_data_->output_data.empty(); || !cuda_manager_running_; });
+    if (!cuda_manager_running_) {
         output_data.clear();
-        return false;
+        return;
     }
     // since the floats are trivially copyable, this is as fast memcpy.
     output_data = result_data_->output_data;
     result_data_->output_data.clear();
-    return true;
 }
 
 

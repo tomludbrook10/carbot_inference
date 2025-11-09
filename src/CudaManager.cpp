@@ -1,27 +1,20 @@
 #include "CudaManager.hpp"
 #include "Coms.hpp"
 
-#include <cuda_runtime.h>
-#include <NvInfer.h>
-#include <nvdsmeta.h>
-#include <nvdspreprocess_meta.h>
-#include <gstnvdsmeta.h>
-
 #include <iostream>
 #include <fstream>
 
-using namespace nvinfer1;
 
-bool CudaManager::setup(const  std::string &model_path, const int OUTPUT_SIZE, const int SIZE_OF_DATA_IN_BYTES) {
+bool CudaManager::setup() {
     logger_ = std::make_unique<Logger>();
 
-    runtime_.reset(createInferRuntime(*logger_));
+    runtime_.reset(createInferRuntime(logger_.get()));
     if (!runtime_) {
         std::cerr << "Failed to create TensorRT Runtime." << std::endl;
         return false;
     }
 
-    std::vector<char> model_data = readModelFromFile(model_path);
+    std::vector<char> model_data = readModelFromFile(model_path_);
     if (model_data.empty()) {
         return false;
     }
@@ -45,7 +38,7 @@ bool CudaManager::setup(const  std::string &model_path, const int OUTPUT_SIZE, c
         return false;
     }
 
-    if (cudaMalloc(&output_buf_, OUTPUT_SIZE * SIZE_OF_DATA_IN_BYTES) != cudaSuccess) {
+    if (cudaMalloc(&output_buf_, output_size_ * sizeof(float)) != cudaSuccess) {
         std::cerr << "Failed to allocate output buffer on GPU for the output tensor." << std::endl;
         return false;
     }
@@ -117,8 +110,6 @@ void CudaManager::infer(ProcessData* input_data,
                         std::cerr << " reallocating..." << std::endl;
                     }
 
-                    // else the size == 0, because we subvert the internal update with the direct memcpy.
-                    result_data->output_data.resize(OUTPUT_SIZE);
                     if (cudaMemcpy(result_data->output_data.data(), output_buf_, OUTPUT_SIZE * SIZE_OF_DATA_IN_BYTES, cudaMemcpyDeviceToHost) != cudaSuccess) {
                         std::cerr << "cuda Memcpy failed!" << std::endl;
                         continue;
