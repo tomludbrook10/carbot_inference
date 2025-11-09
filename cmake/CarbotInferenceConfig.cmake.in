@@ -1,0 +1,6 @@
+@PACKAGE_INIT@
+find_package(CUDAToolkit REQUIRED)
+
+# Make the imported targets visible
+include("${CMAKE_CURRENT_LIST_DIR}/CarbotInferenceTargets.cmake")
+set(CarbotInference_FOUND TRUE)

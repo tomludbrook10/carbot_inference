@@ -3,10 +3,11 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <iostream>
 #include <cuda_runtime.h>
 #include <NvInfer.h>
 
-#include "ProcessData.hpp"
+#include "Coms.hpp"
 
 class Logger : public nvinfer1::ILogger {
     void log(Severity severity, const char* msg) noexcept override {
@@ -20,7 +21,7 @@ class Logger : public nvinfer1::ILogger {
 
 class CudaManager {
 public:
-    bool setup(const std::string &model_path);
+    bool setup(const std::string &model_path, const int OUTPUT_SIZE, const int SIZE_OF_DATA_IN_BYTES);
     void infer(ProcessData* data, 
                ResultData* result_data, 
                const int INPUT_SIZE, 
