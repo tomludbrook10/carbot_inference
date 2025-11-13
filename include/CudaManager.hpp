@@ -21,22 +21,27 @@ class Logger : public nvinfer1::ILogger {
 
 class CudaManager {
 public:
-    bool setup(const std::string &model_path, const int OUTPUT_SIZE, const int SIZE_OF_DATA_IN_BYTES);
-    void infer(ProcessData* data, 
+    CudaManager(ModelContext model_context) : model_context_(model_context) {}
+    bool setup(const std::string &model_path);
+    void infer(ProcessData* input_data,
                ResultData* result_data, 
-               const int INPUT_SIZE, 
-               const int OUTPUT_SIZE, 
-               const int SIZE_OF_DATA_IN_BYTES,
+               const uint64_t MAX_INFER_TIME_NS,
+               uint64_t *base_time,
+               const std::string& save_path,
                bool *running_);
 
 private:
     cudaStream_t stream_;
     cudaError_t err_;
+    void *input_buf_;
     void* output_buf_;
+    ModelContext model_context_;
 
     std::unique_ptr<Logger> logger_;
     std::unique_ptr<nvinfer1::IRuntime> runtime_;
     std::unique_ptr<nvinfer1::ICudaEngine> engine_;
     std::unique_ptr<nvinfer1::IExecutionContext> context_;
     std::vector<char> readModelFromFile(const std::string& model_path);
+    CudaBuffer getCudaBuffer(GstBuffer* gst_buffer);
+
 };

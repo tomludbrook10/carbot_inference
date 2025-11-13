@@ -14,4 +14,5 @@
 ## Note we can't set the optShapes as our model is not dynamic.
 
 
-exec trtexec --onnx=/home/tom/carbot_inference/epv_model_v2.onnx --saveEngine=/home/tom/carbot_inference/modelv2.engine
+
+exec trtexec --onnx=/home/tom/models/carbot_v1/$1.onnx --saveEngine=/home/tom/models/carbot_v1/$1.engine

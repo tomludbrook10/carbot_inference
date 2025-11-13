@@ -7,14 +7,13 @@
 #include "CudaManager.hpp"
 #include "Coms.hpp"
 
-
-
 class InferPipelineManager {
 public:
     explicit InferPipelineManager(
+        ModelContext model_context,
+        const std::string& save_path = "",
         const std::string& config_file_path = "/home/tom/carbot_inference/config/config_preprocess.txt",
-        const std::string& model_path = "/home/tom/models/carbot_v1/modelv2.engine"
-    );
+        const std::string& model_path = "/home/tom/models/carbot_v1/modelv2.engine");
     bool setup();
     bool startPipelineAsync();
     void stopPipeline();
@@ -24,13 +23,15 @@ public:
 private:
     const int WIDTH = 1920;
     const int HEIGHT = 1080;
-    const int OUTPUT_SIZE = 16; // [1, 8, 2], current model is static sized. [1, 3, 256, 256] -> [1, 8, 2]
-    const int INPUT_SIZE = 1 * 3 * 256 * 256;
-    const int SIZE_OF_DATA_IN_BYTES = 4; // float.
+    const uint64_t MAX_INFER_TIME_NS = 20000000; // 20ms
+    ModelContext model_context_;
 
-    GstElement* pipeline_;
+    GstElement* pipeline_, *source_;
     const std::string config_file_path_;
     const std::string model_path_;
+    const std::string save_path_;
+
+    uint64_t base_time_;
 
     std::unique_ptr<CudaManager> cuda_manager_;
     std::unique_ptr<ProcessData> process_data_;

@@ -40,11 +40,13 @@ static GstFlowReturn on_new_sample(GstElement *appsink, gpointer udata) {
     return GST_FLOW_OK;
 }
 
-InferPipelineManager::InferPipelineManager(const std::string& config_file_path, const std::string& model_path)
-    : pipeline_(nullptr), config_file_path_(config_file_path), model_path_(model_path) {}
-
+InferPipelineManager::InferPipelineManager(ModelContext model_context,
+                                           const std::string& save_path,
+                                           const std::string& config_file_path, 
+                                           const std::string& model_path)
+    : pipeline_(nullptr), save_path_(save_path), config_file_path_(config_file_path), model_path_(model_path), model_context_(model_context) {}
 bool InferPipelineManager::setup() {
-    GstElement *source, *network_preprocessor, *sink;
+    GstElement *network_preprocessor, *sink;
     GstElement *streammux;
     GstElement *camera_capsfilter;
     GstCaps *camera_caps;
@@ -58,13 +60,13 @@ bool InferPipelineManager::setup() {
         return false;
     }
 
-    source = gst_element_factory_make("nvarguscamerasrc", "source");
+    source_ = gst_element_factory_make("nvarguscamerasrc", "source");
     streammux = gst_element_factory_make("nvstreammux", "streammux");
     network_preprocessor = gst_element_factory_make("nvdspreprocess", "network-preprocessor");
     sink = gst_element_factory_make("appsink", "sink");
     camera_capsfilter = gst_element_factory_make("capsfilter", "camera-capsfilter");
 
-    if (!source || !streammux || !network_preprocessor || !sink || !camera_capsfilter) {
+    if (!source_ || !streammux || !network_preprocessor || !sink || !camera_capsfilter) {
         g_printerr("Not all elements could be created.\n");
         gst_object_unref(pipeline_);
         return false;
@@ -78,8 +80,8 @@ bool InferPipelineManager::setup() {
     g_object_set(G_OBJECT(network_preprocessor), "config-file", config_file_path_.c_str(), nullptr);
     g_object_set(G_OBJECT(streammux), "width", WIDTH, "height", HEIGHT, "batch-size", 1, nullptr);
 
-    gst_bin_add_many(GST_BIN(pipeline_), source, camera_capsfilter, streammux, network_preprocessor, sink, nullptr);
-    gst_element_link_many(source, camera_capsfilter, nullptr);
+    gst_bin_add_many(GST_BIN(pipeline_), source_, camera_capsfilter, streammux, network_preprocessor, sink, nullptr);
+    gst_element_link_many(source_, camera_capsfilter, nullptr);
     
 
     // https://docs.nvidia.com/metropolis/deepstream/dev-guide/text/DS_plugin_gst-nvstreammux.html
@@ -104,20 +106,23 @@ bool InferPipelineManager::setup() {
     g_object_set(G_OBJECT(sink), "emit-signals", true, "sync", false, nullptr);
     g_signal_connect(sink, "new-sample", G_CALLBACK(on_new_sample), process_data_.get());
 
+    // Use system monotonic clock for the pipeline 
+    GstClock *system_clock = gst_system_clock_obtain();
+    g_object_set(system_clock, "clock-type", GST_CLOCK_TYPE_MONOTONIC, nullptr);
+    gst_pipeline_use_clock(GST_PIPELINE(pipeline_), system_clock);
+    gst_object_unref(system_clock);
+
     std::cout << "GST Infer pipeline setup completed." << std::endl;
 
-    cuda_manager_ = std::make_unique<CudaManager>();
-    if (!cuda_manager_->setup(model_path_, OUTPUT_SIZE, SIZE_OF_DATA_IN_BYTES)) {
+    cuda_manager_ = std::make_unique<CudaManager>(model_context_);
+    if (!cuda_manager_->setup(model_path_)) {
         std::cerr << "Failed to set up CudaManager." << std::endl;
         gst_object_unref(pipeline_);
         return false;
     }
 
     result_data_ =  std::make_unique<ResultData>();
-    result_data_->output_data.reserve(OUTPUT_SIZE);
-
-    std::cout << "Waiting 5 seconds for camera to warm up..." << std::endl;
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    result_data_->output_data.reserve(model_context_.OUTPUT_SIZE);
     return true;
 }
 
@@ -133,9 +138,9 @@ bool InferPipelineManager::startPipelineAsync() {
                                     cuda_manager_.get(), 
                                     process_data_.get(), 
                                     result_data_.get(), 
-                                    INPUT_SIZE, 
-                                    OUTPUT_SIZE, 
-                                    SIZE_OF_DATA_IN_BYTES,
+                                    MAX_INFER_TIME_NS,
+                                    &base_time_,
+                                    save_path_,
                                     &cuda_manager_running_);
     return true;
 }
@@ -178,10 +183,14 @@ void InferPipelineManager::startPipeline() {
         return;
     }
 
+    base_time_ = static_cast<uint64_t>(gst_element_get_base_time(source_));
+    std::cout << "Pipeline started at base time (ns): " << base_time_ << std::endl;
+
     bus = gst_element_get_bus(pipeline_);
     msg = gst_bus_timed_pop_filtered(bus, 
                                     GST_CLOCK_TIME_NONE,
                                     static_cast<GstMessageType>(GST_MESSAGE_ERROR | GST_MESSAGE_EOS));
+
 
     if (msg != NULL) {
         GError *err;
