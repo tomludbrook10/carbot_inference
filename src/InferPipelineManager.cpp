@@ -73,15 +73,17 @@ bool InferPipelineManager::setup() {
     }
 
     // camera caps. 
-    camera_caps = gst_caps_from_string("video/x-raw(memory:NVMM), width=1920, height=1080, framerate=1/1, format=NV12");
+    camera_caps = gst_caps_from_string("video/x-raw(memory:NVMM), width=1920, height=1080, framerate=4/1, format=NV12");
     g_object_set(G_OBJECT(camera_capsfilter), "caps", camera_caps, nullptr);
     gst_caps_unref(camera_caps);
 
     g_object_set(G_OBJECT(network_preprocessor), "config-file", config_file_path_.c_str(), nullptr);
-    g_object_set(G_OBJECT(streammux), "width", WIDTH, "height", HEIGHT, "batch-size", 1, nullptr);
+    g_object_set(G_OBJECT(streammux), "width", WIDTH, "height", HEIGHT, "batch-size", 1, "buffer-pool-size", BUFFER_POOL_SIZE, nullptr);
 
     gst_bin_add_many(GST_BIN(pipeline_), source_, camera_capsfilter, streammux, network_preprocessor, sink, nullptr);
     gst_element_link_many(source_, camera_capsfilter, nullptr);
+
+
     
 
     // https://docs.nvidia.com/metropolis/deepstream/dev-guide/text/DS_plugin_gst-nvstreammux.html

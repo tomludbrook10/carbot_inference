@@ -24,6 +24,7 @@ private:
     const int WIDTH = 1920;
     const int HEIGHT = 1080;
     const uint64_t MAX_INFER_TIME_NS = 20000000; // 20ms
+    const int BUFFER_POOL_SIZE = 7; // need to set higher than CONTEXT_BUFFER_SIZE
     ModelContext model_context_;
 
     GstElement* pipeline_, *source_;

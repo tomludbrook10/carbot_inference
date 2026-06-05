@@ -17,6 +17,7 @@ find_package(DeepStream REQUIRED COMPONENTS nvdsgst_meta nvds_meta nvdspreproces
 add_library(carbot_inference SHARED 
     src/CudaManager.cpp
     src/InferPipelineManager.cpp
+    src/UndiscretisePredict.cpp
 )
 
 target_include_directories(carbot_inference

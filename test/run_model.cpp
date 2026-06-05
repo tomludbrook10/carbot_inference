@@ -44,6 +44,34 @@ std::vector<char> readModelFromFile(const std::string& model_path) {
     return buffer;
 }
 
+std::vector<float> loadTestInputData(const std::string& input_path, size_t expected_size) {
+    std::ifstream file(input_path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        std::cerr << "Failed to open input data file: " << input_path << std::endl;
+        return {};
+    }
+    std::vector<float> input_data(expected_size);
+    file.seekg(0, std::ios::beg);
+    if (!file.read(reinterpret_cast<char*>(input_data.data()), expected_size * sizeof(float))) {
+        std::cerr << "Failed to read input data file: " << input_path << std::endl;
+        return {};
+    }
+    return input_data;
+}
+
+std::vector<float> saveTestOutputData(const std::string& output_path, std::vector<float>& output_data) {
+    std::ofstream file(output_path, std::ios::binary);
+    if (!file) {
+        std::cerr << "Failed to open output data file for writing: " << output_path << std::endl;
+        return {};
+    }
+    if (!file.write(reinterpret_cast<const char*>(output_data.data()), output_data.size() * sizeof(float))) {
+        std::cerr << "Failed to write output data to file: " << output_path << std::endl;
+        return {};
+    }
+    return output_data;
+}
+
 int main() {
     
     auto start = std::chrono::steady_clock::now();
@@ -53,7 +81,7 @@ int main() {
         return -1;
     }
 
-    std::vector<char> model_data = readModelFromFile("/home/tom/models/carbot_v1/modelv1.engine");
+    std::vector<char> model_data = readModelFromFile("/home/tom/models/carbot_v1/outside_hallway_v3.engine");
     if (model_data.empty()) {
         return -1;
     }
@@ -71,12 +99,24 @@ int main() {
         return -1;
     }
 
-    size_t input_size = 1 * 3 * 256 * 256;
-    size_t output_size = 1 * 8 * 2;
+    std::string input_path = "/home/tom/carbot_inference/rollouts/input_tensor_0.bin";
+    std::string output_path = "/home/tom/carbot_inference/output/output_tensor_0.bin";
+
+    size_t input_size = 3 * 280 * 280;
+    size_t output_size = 2 * 6;
     void* input_buf;
     void* output_buf;
+
+    std::vector<float> input_data = loadTestInputData(input_path, input_size);
+    if (input_data.empty()) {
+        return -1;
+    }
+
     cudaMalloc(&input_buf, input_size * sizeof(float));
     cudaMalloc(&output_buf, output_size * sizeof(float));
+
+    cudaMemcpy(input_buf, input_data.data(), input_size * sizeof(float), cudaMemcpyHostToDevice);
+
 
     cudaStream_t stream;
     cudaStreamCreate(&stream);
@@ -85,6 +125,11 @@ int main() {
     context->setTensorAddress("output", output_buf);
 
     context->enqueueV3(stream);
+    cudaStreamSynchronize(stream);
+
+    std::vector<float> output_data(output_size);
+    cudaMemcpy(output_data.data(), output_buf, output_size * sizeof(float), cudaMemcpyDeviceToHost);
+    saveTestOutputData(output_path, output_data);
 
     auto duration = std::chrono::steady_clock::now() - start;
     std::cout << "Model loaded and engine created in "

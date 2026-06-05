@@ -80,6 +80,7 @@ void CudaManager::infer(ProcessData* input_data,
     {
         std::lock_guard<std::mutex> lock_init(input_data->mtx);
         for (; !input_data->buffer_queue.empty(); input_data->buffer_queue.pop()) {
+            std::cout << "removed buffer" << std::endl;
             GstBuffer *buf = input_data->buffer_queue.front();
             gst_buffer_unref(buf);
         }
@@ -127,7 +128,7 @@ void CudaManager::infer(ProcessData* input_data,
         // buffer are ordered from oldest to newest. 
         for (size_t i = 0; i < model_context_.CONTEXT_BUFFER_SIZE; ++i) {
             void* dest_ptr = static_cast<char*>(input_buf_) + i * model_context_.INPUT_SIZE * model_context_.SIZE_OF_DATA_IN_BYTES;
-            if (cudaMemcpy(dest_ptr, cuda_buffers[i].device_ptr, model_context_.INPUT_SIZE * model_context_.SIZE_OF_DATA_IN_BYTES, cudaMemcpyDeviceToDevice) != cudaSuccess) {
+            if (cudaMemcpy(dest_ptr, cuda_buffers[model_context_.CONTEXT_BUFFER_SIZE - 1 - i].device_ptr, model_context_.INPUT_SIZE * model_context_.SIZE_OF_DATA_IN_BYTES, cudaMemcpyDeviceToDevice) != cudaSuccess) {
                 std::cerr << "Failed to copy input tensor to context buffer." << std::endl;
             }
         }
@@ -217,7 +218,8 @@ CudaBuffer CudaManager::getCudaBuffer(GstBuffer* gst_buffer) {
             
             auto input_size = preprocess_meta->tensor_meta->buffer_size;
             if (input_size != model_context_.INPUT_SIZE * model_context_.SIZE_OF_DATA_IN_BYTES) {
-                std::cerr << "Unexpected input tensor size: " << input_size << std::endl;
+                std::cerr << "Unexpected input tensor size: " << input_size << "Input size is expected to be: " 
+                          << model_context_.INPUT_SIZE * model_context_.SIZE_OF_DATA_IN_BYTES << std::endl;
                 continue;
             }
             return CudaBuffer{gst_buffer, preprocess_meta->tensor_meta->raw_tensor_buffer, input_size};
