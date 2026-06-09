@@ -1,1 +1,15 @@
+# Build
+build/
 /build
+
+# Compiled binaries & artifacts
+main
+*.o
+*.so
+*.a
+*.engine
+*.bin
+
+# OS / editor
+.DS_Store
+.vscode/
